@@ -9,7 +9,7 @@ I propose to train a deep neural network to discriminate between various kinds o
 Detailed proposal is also [available](redhen2017_proposal_ganesh_srinivas).
 
 ## Scripts
-1. Tensorflow implementation of laughter embedding network: a feedforward attention-based convolutional network that produces 128-dimension embeddings using a triplet-loss function.
+1. Tensorflow implementation of laughter embedding network: a [feedforward attention-based convolutional network](https://github.com/ganesh-srinivas/deep-sing) that produces 128-dimension embeddings using a triplet-loss function.
 2. A script that takes 128-dimension audio embeddings as input and reduces dimensionality to 2D/3D using PCA/t-SNE using Scikit-Learn’s/van der Maaten’s implementation.
 
 ## Requirements
