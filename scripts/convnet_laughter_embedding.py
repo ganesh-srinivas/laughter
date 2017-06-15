@@ -14,7 +14,7 @@ DATASET_LOCATION = "../dataset/audioset_laughter_clips/"
 with open(FILENAMES,"r") as fh:
     filecontents=fh.read()
     filenames=filecontents.split('\n')
-    filenames=filenames[:-1] 
+    filenames=filenames[:-1]
     filenames = [DATASET_LOCATION+f for f in filenames]
 
 random.shuffle(filenames)
