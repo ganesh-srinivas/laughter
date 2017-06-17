@@ -43,9 +43,9 @@ num_hidden = 200
 
 ## Helper functions for loading data and extracting features
 def labeltext2labelid(category_name):
-	"""
-	Returns a numerical label for each laughter category
-	"""
+    """
+    Returns a numerical label for each laughter category
+    """
     possible_categories = ['baby_laughter', 'belly_laugh', \
     'chuckle_chortle', 'giggle', 'snicker']
     return possible_categories.index(category_name)
@@ -114,7 +114,7 @@ def apply_max_pool(x,kernel_size,stride_size):
                           strides=[1, stride_size, stride_size, 1], padding='SAME')
 
 
-## Loading the dataset and extracting features
+## Loading the test and train clips.
 with open(FILENAMES,"r") as fh:
     filecontents=fh.read()
     filenames=filecontents.split('\n')
@@ -156,6 +156,10 @@ correct_prediction = tf.equal(tf.argmax(pred,1), tf.argmax(Y,1))
 accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
 
 ## Running the computational graph
+# We run the training algorithm in batches and compute the loss 
+# for each batch, and optimize the network weights accordingly.
+# In the end, we look at the accuracy of the trained network on the
+# test set. 
 cost_history = np.empty(shape=[1],dtype=float)
 with tf.Session() as session:
     tf.initialize_all_variables().run()

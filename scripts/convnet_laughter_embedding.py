@@ -1,77 +1,101 @@
+"""
+This script contains code for a Convolutional Neural Network
+that produces an fixed-length continuous-valued vector representation
+(embedding) for a 10-second audio clip using a triplet loss function: 
+distances in the embedding space will correspond to audio similarity. 
+The laughter categories are baby laughter, belly laugh, chuckle/chortle, 
+giggle, snicker.
+
+Author: Ganesh Srinivas <gs401 [at] snu.edu.in>
+"""
+
 import glob
 import os
 import random
 
+import tensorflow as tf
 import librosa
 import matplotlib.pyplot as plt
-import tensorflow as tf
 import numpy as np
 
 plt.ion()
 
+## Dataset location
 FILENAMES = "../dataset/audioset_laughter_clips/10secondclipfiles.txt"
 DATASET_LOCATION = "../dataset/audioset_laughter_clips/"
-with open(FILENAMES,"r") as fh:
-    filecontents=fh.read()
-    filenames=filecontents.split('\n')
-    filenames=filenames[:-1]
-    filenames = [DATASET_LOCATION+f for f in filenames]
 
-random.shuffle(filenames)
-filenames = filenames[:2250]
-rnd_indices = np.random.rand(len(filenames)) < 0.70
-print len(rnd_indices)
-train = []
-test = []
-for i in range(len(filenames)):
-    if rnd_indices[i]:
-        train.append(rnd_indices)
-    else:
-        test.append(rnd_indices)
-#train = filenames[rnd_indices]
-#test = filenames[~rnd_indices]
-print "Train: ", len(train)
-print "Test: ", len(test)
+## Hyperparameters
+# for Learning algorithm
+learning_rate = 0.01
+batch_size = 60 
+training_iterations = 10
 
+# for Feature extraction
+max_audio_length = 221184
+frames = 433
+bands = 60
+feature_size = frames*bands #433x60
 
-def labeltext2labelid(text):
-    possible_labels = ['baby_laughter', 'belly_laugh', 'chuckle_chortle', 'giggle', 'snicker']
-    return possible_labels.index(text)
+# for Network
+num_labels = 5
+num_channels = 2 
+kernel_size = 30
+depth = 20
+num_hidden = 200
+loss_epsilon = 1e-3
 
-def shape_sound_clip(sound_clip, required_length=221184):
+## Helper functions for loading data and extracting features
+def labeltext2labelid(category_name):
+    """
+    Returns a numerical label for each laughter category
+    """
+    possible_categories = ['baby_laughter', 'belly_laugh', \
+    'chuckle_chortle', 'giggle', 'snicker']
+    return possible_categories.index(category_name)
+
+def shape_sound_clip(sound_clip, required_length=max_audio_length):
+    """
+    Shapes sound clips to have constant length
+    """
     z=np.zeros((required_length-sound_clip.shape[0],))
     return np.append(sound_clip,z)
 
 def extract_features(filenames):
-  log_specgrams = []
-  labels=[]
-  for f in filenames:
-    signal,s = librosa.load(f)
-    sound_clip = shape_sound_clip(signal)
-    melspec = librosa.feature.melspectrogram(sound_clip, n_mels = 60)
-    #print melspec.shape
-    logspec = librosa.logamplitude(melspec)
-    #print logspec.shape
-    logspec = logspec.T.flatten()[:, np.newaxis].T
-    #print logspec.shape
-    #print "Produce of two elements in melspec: ", melspec.shape[0]*melspec.shape[1]  
-    log_specgrams.append(logspec)
-    labels.append(labeltext2labelid(f.split('/')[-2]))
-    
-  log_specgrams=np.asarray(log_specgrams).reshape(len(log_specgrams),60,433,1)
-  features = np.concatenate((log_specgrams, np.zeros(np.shape(log_specgrams))), axis=3)
-  for i in range(len(features)):
-        features[i, :, :, 1] = librosa.feature.delta(features[i, :, :, 0])
-  return np.array(features), np.array(labels,dtype=np.int)
+    """
+    Extract log-scaled mel-spectrograms and their corresponding 
+    deltas from the sound clips
+    """
+    log_specgrams = []
+    labels=[]
+    for f in filenames:
+      signal,s = librosa.load(f)
+      sound_clip = shape_sound_clip(signal)
+      melspec = librosa.feature.melspectrogram(sound_clip, n_mels = 60)
+      #print melspec.shape
+      logspec = librosa.logamplitude(melspec)
+      #print logspec.shape
+      logspec = logspec.T.flatten()[:, np.newaxis].T
+      #print logspec.shape
+      #print "Produce of two elements in melspec: ", melspec.shape[0]*melspec.shape[1]  
+      log_specgrams.append(logspec)
+      labels.append(labeltext2labelid(f.split('/')[-2]))  
+    log_specgrams=np.asarray(log_specgrams).reshape(len(log_specgrams),60,433,1)
+    features = np.concatenate((log_specgrams, np.zeros(np.shape(log_specgrams))), axis=3)
+    for i in range(len(features)):
+          features[i, :, :, 1] = librosa.feature.delta(features[i, :, :, 0])
+    return np.array(features), np.array(labels,dtype=np.int)
 
-def one_hot_encode(labels):
+def one_hot_encode(labels, num_labels=num_labels):
+    """
+    Convert list of label IDs to a list of one-hot encoding vectors
+    """
     n_labels = len(labels)
-    #n_unique_labels = len(np.unique(labels))
-    n_unique_labels = 5
+    n_unique_labels = num_labels
     one_hot_encode = np.zeros((n_labels,n_unique_labels))
     one_hot_encode[np.arange(n_labels), labels] = 1
     return one_hot_encode
 
+## Helper functions for defining the network
 def weight_variable(shape):
     initial = tf.truncated_normal(shape, stddev = 0.1)
     return tf.Variable(initial)
@@ -93,19 +117,30 @@ def apply_max_pool(x,kernel_size,stride_size):
                           strides=[1, stride_size, stride_size, 1], padding='SAME')
 
 
-frames = 433
-bands = 60
+## Loading the test and train clips.
+with open(FILENAMES,"r") as fh:
+    filecontents=fh.read()
+    filenames=filecontents.split('\n')
+    filenames=filenames[:-1] 
+    filenames = [DATASET_LOCATION+f for f in filenames]
+random.shuffle(filenames)
+filenames = filenames[:2250]
+#As we are using triplet-loss function, training data must be loaded 
+#in a specific manner (not random!): ANCHOR, POSITIVE, NEGATIVE, so on.
+#rnd_indices = np.random.rand(len(filenames)) < 0.70
 
-feature_size = frames*bands #433x60
-num_labels = 5
-num_channels = 2
+print len(rnd_indices)
+train = []
+test = []
+for i in range(len(filenames)):
+    if rnd_indices[i]:
+        train.append(rnd_indices)
+    else:
+        test.append(rnd_indices)
+print "Train examples: ", len(train)
+print "Test examples: ", len(test)
 
-kernel_size = 30
-depth = 20
-num_hidden = 200
-
-learning_rate = 0.01
-
+## Defining the network as a TensorFlow computational graph
 X = tf.placeholder(tf.float32, shape=[None,bands,frames,num_channels])
 Y = tf.placeholder(tf.float32, shape=[None,num_labels])
 cov = apply_convolution(X,kernel_size,num_channels,depth)
@@ -116,16 +151,26 @@ f_biases = bias_variable([num_hidden])
 f = tf.nn.sigmoid(tf.add(tf.matmul(cov_flat, f_weights),f_biases))
 out_weights = weight_variable([num_hidden, num_labels])
 out_biases = bias_variable([num_labels])
-y_ = tf.nn.softmax(tf.matmul(f, out_weights) + out_biases)
+pred = tf.nn.softmax(tf.matmul(f, out_weights) + out_biases)
 
-cross_entropy = -tf.reduce_sum(Y * tf.log(y_))
-optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cross_entropy)
+# Defining the triplet loss function 
+# TODO: Need to replace these Python expressions with TF primitives/calls
+#       because I think that not doing so is suboptimal. 
+anchor_positive_dist = ((pred[::3] - pred[1::3])**2).sum(axis=1)
+anchor_negative_dist = ((pred[::3] - pred[2::3])**2).sum(axis=1)
+s = anchor_positive_dist - anchor_negative_dist + loss_epsilon
+loss = T.sum(s * tf.greater(s , 0.0))
+
+optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
 #train_prediction = tf.nn.softmax(cross_entropy)
-correct_prediction = tf.equal(tf.argmax(y_,1), tf.argmax(Y,1))
+correct_prediction = tf.equal(tf.argmax(pred,1), tf.argmax(Y,1))
 accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
 
-batch_size = 225
-training_iterations = 10
+## Running the computational graph
+# We run the training algorithm in batches and compute the loss 
+# for each batch, and optimize the network weights accordingly.
+# In the end, we look at the accuracy of the trained network on the
+# test set. 
 cost_history = np.empty(shape=[1],dtype=float)
 with tf.Session() as session:
     tf.initialize_all_variables().run()
@@ -144,4 +189,3 @@ with tf.Session() as session:
     plt.plot(cost_history)
     plt.axis([0,training_iterations,0,np.max(cost_history)])
     plt.show()
-
