@@ -12,9 +12,10 @@ import os
 import random
 
 import tensorflow as tf
-import librosa
 import matplotlib.pyplot as plt
 import numpy as np
+
+import feature_extraction
 
 plt.ion()
 
@@ -25,7 +26,7 @@ DATASET_LOCATION = "../dataset/audioset_laughter_clips/"
 ## Hyperparameters
 # for Learning algorithm
 learning_rate = 0.01
-batch_size = 225
+batch_size = 60 
 training_iterations = 10
 
 # for Feature extraction
@@ -37,6 +38,7 @@ feature_size = frames*bands #433x60
 # for Network
 num_labels = 5
 num_channels = 2 
+
 kernel_size = 30
 depth = 20
 num_hidden = 200
@@ -65,21 +67,29 @@ def extract_features(filenames):
     log_specgrams = []
     labels=[]
     for f in filenames:
-      signal,s = librosa.load(f)
+      signal,s = feature_extraction.load(f)
       sound_clip = shape_sound_clip(signal)
-      melspec = librosa.feature.melspectrogram(sound_clip, n_mels = 60)
+
+      melspec = feature_extraction.melspectrogram(sound_clip, n_mels = 60)
       #print melspec.shape
-      logspec = librosa.logamplitude(melspec)
+
+      logspec = feature_extraction.power_to_db(melspec)
       #print logspec.shape
       logspec = logspec.T.flatten()[:, np.newaxis].T
       #print logspec.shape
+
       #print "Produce of two elements in melspec: ", melspec.shape[0]*melspec.shape[1]  
       log_specgrams.append(logspec)
+
       labels.append(labeltext2labelid(f.split('/')[-2]))  
+
     log_specgrams=np.asarray(log_specgrams).reshape(len(log_specgrams),60,433,1)
+
     features = np.concatenate((log_specgrams, np.zeros(np.shape(log_specgrams))), axis=3)
+
     for i in range(len(features)):
-          features[i, :, :, 1] = librosa.feature.delta(features[i, :, :, 0])
+          features[i, :, :, 1] = feature_extraction.delta(features[i, :, :, 0])
+
     return np.array(features), np.array(labels,dtype=np.int)
 
 def one_hot_encode(labels, num_labels=num_labels):
@@ -88,8 +98,10 @@ def one_hot_encode(labels, num_labels=num_labels):
     """
     n_labels = len(labels)
     n_unique_labels = num_labels
+
     one_hot_encode = np.zeros((n_labels,n_unique_labels))
     one_hot_encode[np.arange(n_labels), labels] = 1
+
     return one_hot_encode
 
 ## Helper functions for defining the network
@@ -107,6 +119,7 @@ def conv2d(x, W):
 def apply_convolution(x,kernel_size,num_channels,depth):
     weights = weight_variable([kernel_size, kernel_size, num_channels, depth])
     biases = bias_variable([depth])
+
     return tf.nn.relu(tf.add(conv2d(x, weights),biases))
 
 def apply_max_pool(x,kernel_size,stride_size):
@@ -120,6 +133,7 @@ with open(FILENAMES,"r") as fh:
     filenames=filecontents.split('\n')
     filenames=filenames[:-1] 
     filenames = [DATASET_LOCATION+f for f in filenames]
+
 random.shuffle(filenames)
 filenames = filenames[:2250]
 rnd_indices = np.random.rand(len(filenames)) < 0.70
@@ -127,30 +141,40 @@ rnd_indices = np.random.rand(len(filenames)) < 0.70
 print len(rnd_indices)
 train = []
 test = []
+
 for i in range(len(filenames)):
     if rnd_indices[i]:
         train.append(rnd_indices)
     else:
         test.append(rnd_indices)
+
 print "Train examples: ", len(train)
+print "First five train examples: ", train[:5]
 print "Test examples: ", len(test)
+print "First five test examples: ", test[:5]
 
 ## Defining the network as a TensorFlow computational graph
 X = tf.placeholder(tf.float32, shape=[None,bands,frames,num_channels])
 Y = tf.placeholder(tf.float32, shape=[None,num_labels])
+
 cov = apply_convolution(X,kernel_size,num_channels,depth)
 shape = cov.get_shape().as_list()
 cov_flat = tf.reshape(cov, [-1, shape[1] * shape[2] * shape[3]])
+
 f_weights = weight_variable([shape[1] * shape[2] * depth, num_hidden])
 f_biases = bias_variable([num_hidden])
+
 f = tf.nn.sigmoid(tf.add(tf.matmul(cov_flat, f_weights),f_biases))
+
 out_weights = weight_variable([num_hidden, num_labels])
 out_biases = bias_variable([num_labels])
+
 pred = tf.nn.softmax(tf.matmul(f, out_weights) + out_biases)
 
 # Defining the loss function 
 cross_entropy = -tf.reduce_sum(Y * tf.log(pred))
 optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cross_entropy)
+
 #train_prediction = tf.nn.softmax(cross_entropy)
 correct_prediction = tf.equal(tf.argmax(pred,1), tf.argmax(Y,1))
 accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
@@ -165,16 +189,22 @@ with tf.Session() as session:
     tf.initialize_all_variables().run()
     for itr in range(training_iterations):    
         offset = (itr * batch_size) % (len(train) - batch_size)
-        print offset
+        print "offset = ", offset
+
         batch = filenames[offset:(offset + batch_size)]
+
         batch_x, batch_y = extract_features(batch)
         batch_y = one_hot_encode(batch_y)
-        print batch_y.shape, batch_x.shape
-        _, c = session.run([optimizer, cross_entropy],feed_dict={X: batch_x, Y : batch_y})
-        cost_history = np.append(cost_history,c)
-    test_x, test_y = extract_features(test)
-    print('Test accuracy: ',round(session.run(accuracy, feed_dict={X: test_x, Y: test_y}) , 3))
+        print "batch_y.shape = ", batch_y.shape
+        print "batch_x.shape = ", batch_x.shape
+
+        #_, c = session.run([optimizer, cross_entropy],feed_dict={X: batch_x, Y : batch_y})
+        #cost_history = np.append(cost_history,c)
+
+    #test_x, test_y = extract_features(batch)
+    #print('Test accuracy: ',round(session.run(accuracy, feed_dict={X: batch_x, Y: batch_y}) , 3))
     fig = plt.figure(figsize=(15,10))
+
     plt.plot(cost_history)
     plt.axis([0,training_iterations,0,np.max(cost_history)])
     plt.show()
