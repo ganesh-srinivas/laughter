@@ -10,24 +10,23 @@ Author: Ganesh Srinivas <gs401 [at] snu.edu.in>
 import glob
 import os
 import random
+import subprocess
 
 import tensorflow as tf
-import matplotlib.pyplot as plt
 import numpy as np
 
-import feature_extraction
-
-plt.ion()
+#import feature_extraction
+import librosa
 
 ## Dataset location
-FILENAMES = "../dataset/audioset_laughter_clips/10secondclipfiles.txt"
-DATASET_LOCATION = "../dataset/audioset_laughter_clips/"
+FILENAMES = "../dataset/unbalanced/10secondclipfiles.txt"
+DATASET_LOCATION = "../dataset/unbalanced/"
 
 ## Hyperparameters
 # for Learning algorithm
 learning_rate = 0.01
-batch_size = 60 
-training_iterations = 10
+batch_size = 120 
+training_iterations = 500
 
 # for Feature extraction
 max_audio_length = 221184
@@ -48,16 +47,26 @@ def labeltext2labelid(category_name):
     """
     Returns a numerical label for each laughter category
     """
-    possible_categories = ['baby_laughter', 'belly_laugh', \
-    'chuckle_chortle', 'giggle', 'snicker']
+    possible_categories = ['baby_laughter_clips', 'belly_laugh_clips', \
+    'chuckle_chortle_clips', 'giggle_clips', 'snicker_clips']
     return possible_categories.index(category_name)
 
 def shape_sound_clip(sound_clip, required_length=max_audio_length):
     """
     Shapes sound clips to have constant length
     """
-    z=np.zeros((required_length-sound_clip.shape[0],))
-    return np.append(sound_clip,z)
+    difference = required_length-sound_clip.shape[0]
+    if difference == 0:
+        return sound_clip
+    elif difference < 0:
+        # Clip length exceeds required length. Trim it.
+        modified_sound_clip = sound_clip[:-difference]
+        return modified_sound_clip
+    else:
+        z = np.zeros((required_length - sound_clip.shape[0],))
+        modified_sound_clip = np.append(sound_clip, z)
+        return modified_sound_clip
+
 
 def extract_features(filenames):
     """
@@ -67,13 +76,15 @@ def extract_features(filenames):
     log_specgrams = []
     labels=[]
     for f in filenames:
-      signal,s = feature_extraction.load(f)
+      print f
+      signal,s = librosa.load(f)
       sound_clip = shape_sound_clip(signal)
+      print sound_clip.shape[0]
 
-      melspec = feature_extraction.melspectrogram(sound_clip, n_mels = 60)
+      melspec = librosa.feature.melspectrogram(sound_clip, n_mels = 60)
       #print melspec.shape
 
-      logspec = feature_extraction.power_to_db(melspec)
+      logspec = librosa.power_to_db(melspec, ref = np.max)
       #print logspec.shape
       logspec = logspec.T.flatten()[:, np.newaxis].T
       #print logspec.shape
@@ -83,12 +94,13 @@ def extract_features(filenames):
 
       labels.append(labeltext2labelid(f.split('/')[-2]))  
 
-    log_specgrams=np.asarray(log_specgrams).reshape(len(log_specgrams),60,433,1)
+    print len(log_specgrams)
+    log_specgrams=np.asarray(log_specgrams).reshape(len(log_specgrams),bands,frames,1)
 
     features = np.concatenate((log_specgrams, np.zeros(np.shape(log_specgrams))), axis=3)
 
     for i in range(len(features)):
-          features[i, :, :, 1] = feature_extraction.delta(features[i, :, :, 0])
+          features[i, :, :, 1] = librosa.feature.delta(features[i, :, :, 0])
 
     return np.array(features), np.array(labels,dtype=np.int)
 
@@ -134,8 +146,8 @@ with open(FILENAMES,"r") as fh:
     filenames=filenames[:-1] 
     filenames = [DATASET_LOCATION+f for f in filenames]
 
+random.seed(10)
 random.shuffle(filenames)
-filenames = filenames[:2250]
 rnd_indices = np.random.rand(len(filenames)) < 0.70
 
 print len(rnd_indices)
@@ -198,13 +210,13 @@ with tf.Session() as session:
         print "batch_y.shape = ", batch_y.shape
         print "batch_x.shape = ", batch_x.shape
 
-        #_, c = session.run([optimizer, cross_entropy],feed_dict={X: batch_x, Y : batch_y})
-        #cost_history = np.append(cost_history,c)
+        _, c = session.run([optimizer, cross_entropy],feed_dict={X: batch_x, Y : batch_y})
+        cost_history = np.append(cost_history,c)
 
-    #test_x, test_y = extract_features(batch)
-    #print('Test accuracy: ',round(session.run(accuracy, feed_dict={X: batch_x, Y: batch_y}) , 3))
-    fig = plt.figure(figsize=(15,10))
+    test_x, test_y = extract_features(batch)
+    print('Test accuracy: ',round(session.run(accuracy, feed_dict={X: batch_x, Y: batch_y}) , 3))
+    #fig = plt.figure(figsize=(15,10))
 
-    plt.plot(cost_history)
-    plt.axis([0,training_iterations,0,np.max(cost_history)])
-    plt.show()
+    #plt.plot(cost_history)
+    #plt.axis([0,training_iterations,0,np.max(cost_history)])
+    #plt.show()

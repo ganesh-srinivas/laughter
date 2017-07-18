@@ -14,15 +14,13 @@ import os
 import random
 
 import tensorflow as tf
-import matplotlib.pyplot as plt
 import numpy as np
 
 import feature_extraction
 
-plt.ion()
 
 ## Dataset location
-FILENAMES = "../dataset/audioset_laughter_clips/10secondclipfiles.txt"
+FILENAMES = "../dataset/unbalanced/10secondclipfiles.txt"
 DATASET_LOCATION = "../dataset/audioset_laughter_clips/"
 
 ## Hyperparameters
@@ -52,8 +50,8 @@ def labeltext2labelid(category_name):
     Returns a numerical label for each laughter category
     """
 
-    possible_categories = ['baby_laughter', 'belly_laugh', \
-    'chuckle_chortle', 'giggle', 'snicker']
+    possible_categories = ['baby_laughter_clips', 'belly_laugh_clips', \
+    'chuckle_chortle_clips', 'giggle_clips', 'snicker_clips']
     return possible_categories.index(category_name)
 
 def shape_sound_clip(sound_clip, required_length=max_audio_length):
@@ -140,7 +138,7 @@ random.shuffle(filenames)
 filenames = filenames[:2250]
 #As we are using triplet-loss function, training data must be loaded 
 #in a specific manner (not random!): ANCHOR, POSITIVE, NEGATIVE, so on.
-#rnd_indices = np.random.rand(len(filenames)) < 0.70
+rnd_indices = np.random.rand(len(filenames)) < 0.70
 
 print len(rnd_indices)
 train = []
@@ -215,8 +213,8 @@ with tf.Session() as session:
     test_x, test_y = extract_features(test)
     print('Test accuracy: ',round(session.run(accuracy, feed_dict={X: test_x, Y: test_y}) , 3))
 
-    fig = plt.figure(figsize=(15,10))
+    #fig = plt.figure(figsize=(15,10))
 
-    plt.plot(cost_history)
-    plt.axis([0,training_iterations,0,np.max(cost_history)])
-    plt.show()
+    #plt.plot(cost_history)
+    #plt.axis([0,training_iterations,0,np.max(cost_history)])
+    #plt.show()
