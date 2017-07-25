@@ -24,9 +24,9 @@ DATASET_LOCATION = "../dataset/unbalanced/"
 
 ## Hyperparameters
 # for Learning algorithm
-learning_rate = 0.01
+learning_rate = 0.001
 batch_size = 120 
-training_iterations = 500
+training_iterations = 1950
 
 # for Feature extraction
 max_audio_length = 221184
@@ -35,7 +35,7 @@ bands = 60
 feature_size = frames*bands #433x60
 
 # for Network
-num_labels = 5
+num_labels = 6
 num_channels = 2 
 
 kernel_size = 30
@@ -48,7 +48,7 @@ def labeltext2labelid(category_name):
     Returns a numerical label for each laughter category
     """
     possible_categories = ['baby_laughter_clips', 'belly_laugh_clips', \
-    'chuckle_chortle_clips', 'giggle_clips', 'snicker_clips']
+    'chuckle_chortle_clips', 'giggle_clips', 'nota_clips', 'snicker_clips']
     return possible_categories.index(category_name)
 
 def shape_sound_clip(sound_clip, required_length=max_audio_length):
@@ -76,10 +76,8 @@ def extract_features(filenames):
     log_specgrams = []
     labels=[]
     for f in filenames:
-      print f
       signal,s = librosa.load(f)
       sound_clip = shape_sound_clip(signal)
-      print sound_clip.shape[0]
 
       melspec = librosa.feature.melspectrogram(sound_clip, n_mels = 60)
       #print melspec.shape
@@ -91,10 +89,12 @@ def extract_features(filenames):
 
       #print "Produce of two elements in melspec: ", melspec.shape[0]*melspec.shape[1]  
       log_specgrams.append(logspec)
-
+      del signal
+      del sound_clip
+      del melspec
+      del logspec
       labels.append(labeltext2labelid(f.split('/')[-2]))  
 
-    print len(log_specgrams)
     log_specgrams=np.asarray(log_specgrams).reshape(len(log_specgrams),bands,frames,1)
 
     features = np.concatenate((log_specgrams, np.zeros(np.shape(log_specgrams))), axis=3)
@@ -148,28 +148,31 @@ with open(FILENAMES,"r") as fh:
 
 random.seed(10)
 random.shuffle(filenames)
-rnd_indices = np.random.rand(len(filenames)) < 0.70
+rnd_indices = np.random.rand(len(filenames)) < 0.80
 
 print len(rnd_indices)
 train = []
 test = []
 
 for i in range(len(filenames)):
-    if rnd_indices[i]:
-        train.append(rnd_indices)
+    random.seed()
+    if random.random() < .95: 
+        train.append(filenames[i])
     else:
-        test.append(rnd_indices)
+        test.append(filenames[i])
 
-print "Train examples: ", len(train)
-print "First five train examples: ", train[:5]
-print "Test examples: ", len(test)
-print "First five test examples: ", test[:5]
+train_x, train_y = extract_features(train)
+test_x, test_y = extract_features(test)
+test_y = one_hot_encode(test_y)
 
 ## Defining the network as a TensorFlow computational graph
 X = tf.placeholder(tf.float32, shape=[None,bands,frames,num_channels])
 Y = tf.placeholder(tf.float32, shape=[None,num_labels])
 
-cov = apply_convolution(X,kernel_size,num_channels,depth)
+# normalization
+X_normalized = tf.nn.l2_normalize(X, dim = 0)
+
+cov = apply_convolution(X_normalized,kernel_size,num_channels,depth)
 shape = cov.get_shape().as_list()
 cov_flat = tf.reshape(cov, [-1, shape[1] * shape[2] * shape[3]])
 
@@ -197,24 +200,23 @@ accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
 # In the end, we look at the accuracy of the trained network on the
 # test set. 
 cost_history = np.empty(shape=[1],dtype=float)
+saver = tf.train.Saver(max_to_keep=5, keep_checkpoint_every_n_hours=1)
 with tf.Session() as session:
     tf.initialize_all_variables().run()
     for itr in range(training_iterations):    
         offset = (itr * batch_size) % (len(train) - batch_size)
-        print "offset = ", offset
-
-        batch = filenames[offset:(offset + batch_size)]
-
-        batch_x, batch_y = extract_features(batch)
+        batch_x = train_x[offset:(offset + batch_size)]
+        batch_y = train_y[offset:(offset + batch_size)]
         batch_y = one_hot_encode(batch_y)
-        print "batch_y.shape = ", batch_y.shape
-        print "batch_x.shape = ", batch_x.shape
-
-        _, c = session.run([optimizer, cross_entropy],feed_dict={X: batch_x, Y : batch_y})
+        if itr % 10 == 0:
+            print 'Test Accuracy: {}'.format(session.run(accuracy, feed_dict={X: test_x, Y: test_y}))
+            saver.save(session, "./model", global_step=itr)
+        _, c, a = session.run([optimizer, cross_entropy, accuracy],feed_dict={X: batch_x, Y : batch_y})
+        print "Training iteration {}: accuracy {}".format(itr, a)
         cost_history = np.append(cost_history,c)
+        del batch_x
 
-    test_x, test_y = extract_features(batch)
-    print('Test accuracy: ',round(session.run(accuracy, feed_dict={X: batch_x, Y: batch_y}) , 3))
+    print 'Final accuracy: {}'.format(session.run(accuracy, feed_dict={X: test_x, Y: test_y}))
     #fig = plt.figure(figsize=(15,10))
 
     #plt.plot(cost_history)
