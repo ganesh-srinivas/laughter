@@ -24,7 +24,7 @@ DATASET_LOCATION = "../dataset/unbalanced/"
 
 ## Hyperparameters
 # for Learning algorithm
-learning_rate = 0.001
+learning_rate = 0.0001
 batch_size = 120 
 training_iterations = 1950
 
