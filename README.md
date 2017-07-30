@@ -14,5 +14,6 @@ Detailed proposal is also [available](redhen2017_proposal_ganesh_srinivas).
 
 ## Requirements
 TensorFlow
+librosa
 sklearn
 
