@@ -1,5 +1,5 @@
 """
-This script contains code for a Convolutional Neural Network
+This script contains code for a Fully-Connected Neural Network
 that classifies a 10-second audio clip into one of five 
 laughter categories: baby laughter, belly laugh, chuckle/chortle, 
 giggle, snicker.
@@ -146,7 +146,7 @@ def apply_max_pool(x,kernel_size,stride_size):
 with open(FILENAMES,"r") as fh:
     filecontents=fh.read()
     filenames=filecontents.split('\n')
-    filenames=filenames[:-1] 
+    filenames=filenames[:50] 
     filenames = [DATASET_LOCATION+f for f in filenames]
 
 random.seed(10)
@@ -175,16 +175,16 @@ Y = tf.placeholder(tf.float32, shape=[None,num_labels])
 # normalization
 X_normalized = tf.nn.l2_normalize(X, dim = 0)
 
-cov = apply_convolution(X_normalized,kernel_size,num_channels,depth)
-shape = cov.get_shape().as_list()
+#cov = apply_convolution(X_normalized,kernel_size,num_channels,depth)
+shape = X_normalized.get_shape().as_list()
 #cov2 = apply_convolution(cov, kernel_size, num_channels, depth)
 #shape2 = cov2.get_shape().as_list()
-cov_flat = tf.reshape(cov, [-1, shape[1] * shape[2] * shape[3]])
+X_normalized_flat = tf.reshape(X_normalized, [-1, shape[1] * shape[2] * shape[3]])
 
 f_weights = weight_variable([shape[1] * shape[2] * depth, num_hidden])
 f_biases = bias_variable([num_hidden])
 
-f = tf.nn.sigmoid(tf.add(tf.matmul(cov_flat, f_weights),f_biases))
+f = tf.add(tf.matmul(cov_flat, f_weights),f_biases)
 
 out_weights = weight_variable([num_hidden, num_hidden2])
 out_biases = bias_variable([num_hidden2])
