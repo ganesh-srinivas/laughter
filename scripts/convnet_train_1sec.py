@@ -1,6 +1,6 @@
 """
-This script contains code for a Fully-Connected Neural Network
-that classifies a 10-second audio clip into one of five 
+This script contains code for a Convolutional Neural Network
+that classifies a 1-second audio clip into one of five 
 laughter categories: baby laughter, belly laugh, chuckle/chortle, 
 giggle, snicker.
 
@@ -29,10 +29,10 @@ batch_size = 120
 training_iterations = 195000
 
 # for Feature extraction
-max_audio_length = 221184
-frames = 433
+max_audio_length = 22119
+frames = 44
 bands = 120 
-feature_size = frames*bands #433x60
+feature_size = frames*bands #44x60
 
 # for Network
 num_labels = 6
@@ -40,8 +40,8 @@ num_channels = 2
 
 kernel_size = 30
 depth = 20
-num_hidden = 200
 
+num_hidden = 100
 num_hidden2 = 100
 num_hidden3 = 50
 
@@ -79,9 +79,10 @@ def extract_features(filenames):
     log_specgrams = []
     labels=[]
     for f in filenames:
-      signal,s = librosa.load(f)
-      sound_clip = shape_sound_clip(signal)
-
+     signal,s = librosa.load(f)
+     subarrays = np.array_split(signal, 10)
+     subarray_clips = [shape_sound_clip(subarray) for subarray in subarrays]
+     for sound_clip in subarray_clips:
       melspec = librosa.feature.melspectrogram(sound_clip, n_mels = 120, n_fft=1024)
       #print melspec.shape
 
@@ -92,12 +93,11 @@ def extract_features(filenames):
 
       #print "Produce of two elements in melspec: ", melspec.shape[0]*melspec.shape[1]  
       log_specgrams.append(logspec)
-      del signal
-      del sound_clip
       del melspec
       del logspec
       labels.append(labeltext2labelid(f.split('/')[-2]))  
-
+     del subarrays
+     del signal
     log_specgrams=np.asarray(log_specgrams).reshape(len(log_specgrams),bands,frames,1)
 
     features = np.concatenate((log_specgrams, np.zeros(np.shape(log_specgrams))), axis=3)
@@ -145,8 +145,7 @@ def apply_max_pool(x,kernel_size,stride_size):
 ## Loading the test and train clips.
 with open(FILENAMES,"r") as fh:
     filecontents=fh.read()
-    filenames=filecontents.split('\n')
-    filenames=filenames[:-1] 
+    filenames=filecontents.splitlines()
     filenames = [DATASET_LOCATION+f for f in filenames]
 
 random.seed(10)
@@ -175,19 +174,16 @@ Y = tf.placeholder(tf.float32, shape=[None,num_labels])
 # normalization
 X_normalized = tf.nn.l2_normalize(X, dim = 0)
 
-#cov = apply_convolution(X_normalized,kernel_size,num_channels,depth)
-shape = X_normalized.get_shape().as_list()
+cov = apply_convolution(X_normalized,kernel_size,num_channels,depth)
+shape = cov.get_shape().as_list()
 #cov2 = apply_convolution(cov, kernel_size, num_channels, depth)
 #shape2 = cov2.get_shape().as_list()
-X_normalized_flat = tf.reshape(X_normalized, [-1, shape[1] * shape[2] * shape[3]])
+cov_flat = tf.reshape(cov, [-1, shape[1] * shape[2] * shape[3]])
 
-shape2 = X_normalized_flat.get_shape().as_list()
-print "shape2 = ", shape2
-
-f_weights = weight_variable([shape2[1]  , num_hidden])
+f_weights = weight_variable([shape[1] * shape[2] * depth, num_hidden])
 f_biases = bias_variable([num_hidden])
 
-f = tf.add(tf.matmul(X_normalized_flat, f_weights),f_biases)
+f = tf.nn.sigmoid(tf.add(tf.matmul(cov_flat, f_weights),f_biases))
 
 out_weights = weight_variable([num_hidden, num_hidden2])
 out_biases = bias_variable([num_hidden2])

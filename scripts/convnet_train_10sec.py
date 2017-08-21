@@ -1,5 +1,5 @@
 """
-This script contains code for a Fully-Connected Neural Network
+This script contains code for a Convolutional Neural Network
 that classifies a 10-second audio clip into one of five 
 laughter categories: baby laughter, belly laugh, chuckle/chortle, 
 giggle, snicker.
@@ -175,19 +175,16 @@ Y = tf.placeholder(tf.float32, shape=[None,num_labels])
 # normalization
 X_normalized = tf.nn.l2_normalize(X, dim = 0)
 
-#cov = apply_convolution(X_normalized,kernel_size,num_channels,depth)
-shape = X_normalized.get_shape().as_list()
+cov = apply_convolution(X_normalized,kernel_size,num_channels,depth)
+shape = cov.get_shape().as_list()
 #cov2 = apply_convolution(cov, kernel_size, num_channels, depth)
 #shape2 = cov2.get_shape().as_list()
-X_normalized_flat = tf.reshape(X_normalized, [-1, shape[1] * shape[2] * shape[3]])
+cov_flat = tf.reshape(cov, [-1, shape[1] * shape[2] * shape[3]])
 
-shape2 = X_normalized_flat.get_shape().as_list()
-print "shape2 = ", shape2
-
-f_weights = weight_variable([shape2[1]  , num_hidden])
+f_weights = weight_variable([shape[1] * shape[2] * depth, num_hidden])
 f_biases = bias_variable([num_hidden])
 
-f = tf.add(tf.matmul(X_normalized_flat, f_weights),f_biases)
+f = tf.nn.sigmoid(tf.add(tf.matmul(cov_flat, f_weights),f_biases))
 
 out_weights = weight_variable([num_hidden, num_hidden2])
 out_biases = bias_variable([num_hidden2])
