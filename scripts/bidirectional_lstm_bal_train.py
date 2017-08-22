@@ -13,8 +13,8 @@ import numpy as np
 import glob
 
 # Filenames, Constants and hyperparameters
-CLASS_LABELS_INDICES_FILENAME = "class_labels_indices.csv"
-LSTM_MODEL_FILENAME = "bidirectional_lstm.h5"
+CLASS_LABELS_INDICES_FILENAME = "file_lists/class_labels_indices.csv"
+LSTM_MODEL_FILENAME = "saved_models/bidirectional_lstm.h5"
 TFRECORD_LOCATION = "/home/gxs393/audioset_v1_embeddings_incomplete/bal_train/"
 
 N_CLASSES_ = 527
