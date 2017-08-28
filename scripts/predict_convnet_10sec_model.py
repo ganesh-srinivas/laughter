@@ -18,14 +18,17 @@ import numpy as np
 #import support_feature_extraction
 import librosa
 
-## Dataset location
-FILENAMES = "../dataset/unbalanced/10secondclipfiles.txt"
-DATASET_LOCATION = "../dataset/unbalanced/"
-
+## List of files it is supposed to predict labels for 
+FILENAMES = "/home/gxs393/dataset/unbalanced/10secondclipfiles.txt"
+DATASET_LOCATION = "/home/gxs393/dataset/unbalanced/"
 
 ## Saved model
 IMPORT_META_GRAPH = "/home/gxs393/experiments/seventh_experiment/model-30960.meta"
 IMPORT_LATEST_CHECKPOINT = "/home/gxs393/experiments/seventh_experiment/" 
+
+## Prediction labels
+possible_categories = ['baby_laughter_clips', 'belly_laugh_clips', \
+    'chuckle_chortle_clips', 'giggle_clips', 'nota_clips', 'snicker_clips']
 
 
 ## Hyperparameters
@@ -76,6 +79,40 @@ def shape_sound_clip(sound_clip, required_length=max_audio_length):
         modified_sound_clip = np.append(sound_clip, z)
         return modified_sound_clip
 
+def extract_features_from_waveforms(waveforms):
+    """
+    Extract log-scaled mel-spectrograms and their corresponding 
+    deltas from the audio waveform (not the filename)
+    """
+    log_specgrams = []
+    #labels=[]
+    for s in waveforms:
+      sound_clip = shape_sound_clip(s)
+
+      melspec = librosa.feature.melspectrogram(sound_clip, n_mels = 120, n_fft=1024)
+      #print melspec.shape
+
+      logspec = librosa.power_to_db(melspec, ref = np.max)
+      #print logspec.shape
+      logspec = logspec.T.flatten()[:, np.newaxis].T
+      #print logspec.shape
+
+      #print "Produce of two elements in melspec: ", melspec.shape[0]*melspec.shape[1]  
+      log_specgrams.append(logspec)
+      del sound_clip
+      del melspec
+      del logspec
+      #labels.append(labeltext2labelid(f.split('/')[-2]))  
+
+    log_specgrams=np.asarray(log_specgrams).reshape(len(log_specgrams),bands,frames,1)
+
+    features = np.concatenate((log_specgrams, np.zeros(np.shape(log_specgrams))), axis=3)
+
+    for i in range(len(features)):
+          features[i, :, :, 1] = librosa.feature.delta(features[i, :, :, 0])
+
+    return np.array(features)#, np.array(labels,dtype=np.int)
+
 
 def extract_features(filenames):
     """
@@ -83,7 +120,7 @@ def extract_features(filenames):
     deltas from the sound clips
     """
     log_specgrams = []
-    labels=[]
+    #labels=[]
     for f in filenames:
       signal,s = librosa.load(f)
       sound_clip = shape_sound_clip(signal)
@@ -102,7 +139,7 @@ def extract_features(filenames):
       del sound_clip
       del melspec
       del logspec
-      labels.append(labeltext2labelid(f.split('/')[-2]))  
+      #labels.append(labeltext2labelid(f.split('/')[-2]))  
 
     log_specgrams=np.asarray(log_specgrams).reshape(len(log_specgrams),bands,frames,1)
 
@@ -111,7 +148,7 @@ def extract_features(filenames):
     for i in range(len(features)):
           features[i, :, :, 1] = librosa.feature.delta(features[i, :, :, 0])
 
-    return np.array(features), np.array(labels,dtype=np.int)
+    return np.array(features)#, np.array(labels,dtype=np.int)
 
 def one_hot_encode(labels, num_labels=num_labels):
     """
@@ -230,12 +267,12 @@ def train():
 
     print 'Final accuracy: {}'.format(session.run(accuracy, feed_dict={X: test_x, Y: test_y}))
 
-def predict():
+def predict_on_10second_clips():
     """Load the saved model and performance inference/prediction on features obtained from inputs"""
     with open(FILENAMES,"r") as fh:
         filecontents=fh.read()
-        filenames=filecontents.split('\n')
-        filenames=filenames[:5]
+        filenames=filecontents.splitlines()
+        filenames=filenames[:5] #[:5] is for quickly verifying if things work
         filenames = [DATASET_LOCATION+f for f in filenames]
 
     session = tf.Session()
@@ -243,11 +280,35 @@ def predict():
     saver.restore(session, tf.train.latest_checkpoint(IMPORT_LATEST_CHECKPOINT))
     tf.global_variables_initializer().run(session=session)
 
-    test_x, test_y = extract_features(filenames)
+    test_x = extract_features(filenames)
 
     predictions = session.run(tf.argmax(pred, 1), feed_dict={X: test_x})
-    print [p for p in predictions]
+    print [possible_categories[p] for p in predictions]
 
-if __name__ == "__main__":
-     
-    predict()
+def predict_on_long_clips():
+    """Load the saved model and perform inference/prediction on features obtained from inputs. 
+    Splits the audio into 10second chunks and predicts on those chunks."""
+    with open(FILENAMES,"r") as fh:
+        filecontents=fh.read()
+        filenames=filecontents.splitlines()
+        random.shuffle(filenames)
+        filenames=filenames[:5] #[:5] is for quickly verifying if things work
+        filenames = [DATASET_LOCATION+f for f in filenames]
+
+    session = tf.Session()
+    saver = tf.train.import_meta_graph(IMPORT_META_GRAPH)
+    saver.restore(session, tf.train.latest_checkpoint(IMPORT_LATEST_CHECKPOINT))
+    tf.global_variables_initializer().run(session=session)
+
+    test_x = {}
+    for f in filenames:
+        s, sr = librosa.load(f)
+        total_chunks = s.shape[0]/max_audio_length
+        waveforms = [s[max_audio_length*i:max_audio_length*(i+1)] for i in range(total_chunks)]
+        test_x[f] = extract_features_from_waveforms(waveforms)
+
+        print "FILENAME: ", f
+        predictions = session.run(tf.argmax(pred, 1), feed_dict={X: test_x[f]})
+        print [possible_categories[p] for p in predictions]
+
+predict_on_long_clips()

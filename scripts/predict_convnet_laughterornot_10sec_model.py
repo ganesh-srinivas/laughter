@@ -13,13 +13,20 @@ import subprocess
 
 import tensorflow as tf
 import numpy as np
-
-#import support_feature_extraction
 import librosa
 
-## Dataset location
+#import support_feature_extraction
+
+## Load trained models
+IMPORT_META_GRAPH = "/home/gxs393/experiments/eleventh_experiment/model-19340.meta"
+IMPORT_LATEST_CHECKPOINT = "/home/gxs393/experiments/eleventh_experiment/"
+
+## Files to predict on 
 FILENAMES = "../dataset/unbalanced/10secondclipfiles.txt"
 DATASET_LOCATION = "../dataset/unbalanced/"
+
+possible_categories = ['laughter','nota_clips']
+
 
 ## Hyperparameters
 # for Learning algorithm
@@ -68,6 +75,40 @@ def shape_sound_clip(sound_clip, required_length=max_audio_length):
         z = np.zeros((required_length - sound_clip.shape[0],))
         modified_sound_clip = np.append(sound_clip, z)
         return modified_sound_clip
+
+def extract_features_from_waveforms(waveforms):
+    """
+    Extract log-scaled mel-spectrograms and their corresponding 
+    deltas from the audio waveform (not the filename)
+    """
+    log_specgrams = []
+    #labels=[]
+    for s in waveforms:
+      sound_clip = shape_sound_clip(s)
+
+      melspec = librosa.feature.melspectrogram(sound_clip, n_mels = 120, n_fft=1024)
+      #print melspec.shape
+
+      logspec = librosa.power_to_db(melspec, ref = np.max)
+      #print logspec.shape
+      logspec = logspec.T.flatten()[:, np.newaxis].T
+      #print logspec.shape
+
+      #print "Produce of two elements in melspec: ", melspec.shape[0]*melspec.shape[1]  
+      log_specgrams.append(logspec)
+      del sound_clip
+      del melspec
+      del logspec
+      #labels.append(labeltext2labelid(f.split('/')[-2]))  
+
+    log_specgrams=np.asarray(log_specgrams).reshape(len(log_specgrams),bands,frames,1)
+
+    features = np.concatenate((log_specgrams, np.zeros(np.shape(log_specgrams))), axis=3)
+
+    for i in range(len(features)):
+          features[i, :, :, 1] = librosa.feature.delta(features[i, :, :, 0])
+
+    return np.array(features)#, np.array(labels,dtype=np.int)
 
 
 def extract_features(filenames):
@@ -146,34 +187,6 @@ def apply_max_pool(x,kernel_size,stride_size):
                           strides=[1, stride_size, stride_size, 1], padding='SAME')
 
 
-## Loading the test and train clips.
-with open(FILENAMES,"r") as fh:
-    filecontents=fh.read()
-    filenames=filecontents.split('\n')
-    filenames=filenames[:-1] 
-    filenames = [DATASET_LOCATION+f for f in filenames]
-
-random.seed(10)
-random.shuffle(filenames)
-rnd_indices = np.random.rand(len(filenames)) < 0.80
-
-print len(rnd_indices)
-train = []
-test = []
-
-for i in range(len(filenames)):
-    random.seed()
-    if random.random() < .95: 
-        train.append(filenames[i])
-    else:
-        test.append(filenames[i])
-
-train_x, train_y = extract_features(train)
-test_x, test_y = extract_features(test)
-test_y = one_hot_encode(test_y)
-#print "test_y.shape = ", test_y.shape
-#print "test_y[0] = ", test_y[0]
-
 ## Defining the network as a TensorFlow computational graph
 X = tf.placeholder(tf.float32, shape=[None,bands,frames,num_channels])
 Y = tf.placeholder(tf.float32, shape=[None,num_labels])
@@ -208,31 +221,32 @@ optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cross_e
 correct_prediction = tf.equal(tf.argmax(pred,1), tf.argmax(Y,1))
 accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
 
-## Running the computational graph
-# We run the training algorithm in batches and compute the loss 
-# for each batch, and optimize the network weights accordingly.
-# In the end, we look at the accuracy of the trained network on the
-# test set. 
-cost_history = np.empty(shape=[1],dtype=float)
-saver = tf.train.Saver(max_to_keep=5, keep_checkpoint_every_n_hours=1)
-with tf.Session() as session:
-    tf.initialize_all_variables().run()
-    for itr in range(training_iterations):    
-        offset = (itr * batch_size) % (len(train) - batch_size)
-        batch_x = train_x[offset:(offset + batch_size)]
-        batch_y = train_y[offset:(offset + batch_size)]
-        batch_y = one_hot_encode(batch_y)
-        if itr % 10 == 0:
-            print 'Test Accuracy: {}'.format(session.run(accuracy, feed_dict={X: test_x, Y: test_y}))
-            saver.save(session, "./model", global_step=itr)
-        _, c, a = session.run([optimizer, cross_entropy, accuracy],feed_dict={X: batch_x, Y : batch_y})
-        print "Training iteration {}: accuracy {}".format(itr, a)
-        cost_history = np.append(cost_history,c)
-        del batch_x
 
-    print 'Final accuracy: {}'.format(session.run(accuracy, feed_dict={X: test_x, Y: test_y}))
-    #fig = plt.figure(figsize=(15,10))
+def predict_on_long_clips():
+    """Load the saved model and perform inference/prediction on features obtained from inputs. 
+    Splits the audio into 10second chunks and predicts on those chunks."""
+    with open(FILENAMES,"r") as fh:
+        filecontents=fh.read()
+        filenames=filecontents.splitlines()
+        random.shuffle(filenames)
+        filenames=filenames[:5] #[:5] is for quickly verifying if things work
+        filenames = [DATASET_LOCATION+f for f in filenames]
 
-    #plt.plot(cost_history)
-    #plt.axis([0,training_iterations,0,np.max(cost_history)])
-    #plt.show()
+    session = tf.Session()
+    saver = tf.train.import_meta_graph(IMPORT_META_GRAPH)
+    saver.restore(session, tf.train.latest_checkpoint(IMPORT_LATEST_CHECKPOINT))
+    tf.global_variables_initializer().run(session=session)
+
+    test_x = {}
+    for f in filenames:
+        s, sr = librosa.load(f)
+        total_chunks = s.shape[0]/max_audio_length
+        waveforms = [s[max_audio_length*i:max_audio_length*(i+1)] for i in range(total_chunks)]
+        test_x[f] = extract_features_from_waveforms(waveforms)
+
+        print "FILENAME: ", f
+        predictions = session.run(tf.argmax(pred, 1), feed_dict={X: test_x[f]})
+        print [possible_categories[p] for p in predictions]
+
+
+predict_on_long_clips()
