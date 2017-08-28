@@ -1,8 +1,7 @@
 """
 This script contains code for a Convolutional Neural Network
-that classifies a 10-second audio clip into one of five 
-laughter categories: baby laughter, belly laugh, chuckle/chortle, 
-giggle, snicker.
+that classifies a 10-sec audio clip as either containing laughter 
+or not.
 
 Author: Ganesh Srinivas <gs401 [at] snu.edu.in>
 """
@@ -15,7 +14,7 @@ import subprocess
 import tensorflow as tf
 import numpy as np
 
-#import feature_extraction
+#import support_feature_extraction
 import librosa
 
 ## Dataset location
@@ -35,7 +34,7 @@ bands = 120
 feature_size = frames*bands #433x60
 
 # for Network
-num_labels = 6
+num_labels = 2
 num_channels = 2 
 
 kernel_size = 30
@@ -50,8 +49,8 @@ def labeltext2labelid(category_name):
     """
     Returns a numerical label for each laughter category
     """
-    possible_categories = ['baby_laughter_clips', 'belly_laugh_clips', \
-    'chuckle_chortle_clips', 'giggle_clips', 'nota_clips', 'snicker_clips']
+    possible_categories = ['laughter',
+    'nota_clips']
     return possible_categories.index(category_name)
 
 def shape_sound_clip(sound_clip, required_length=max_audio_length):
@@ -96,7 +95,12 @@ def extract_features(filenames):
       del sound_clip
       del melspec
       del logspec
-      labels.append(labeltext2labelid(f.split('/')[-2]))  
+      if f.split('/')[-2] == 'nota_clips':
+          label = labeltext2labelid('nota_clips')
+      else:
+          label = labeltext2labelid('laughter')
+      #print "label: ", label
+      labels.append(label)
 
     log_specgrams=np.asarray(log_specgrams).reshape(len(log_specgrams),bands,frames,1)
 
@@ -167,6 +171,8 @@ for i in range(len(filenames)):
 train_x, train_y = extract_features(train)
 test_x, test_y = extract_features(test)
 test_y = one_hot_encode(test_y)
+#print "test_y.shape = ", test_y.shape
+#print "test_y[0] = ", test_y[0]
 
 ## Defining the network as a TensorFlow computational graph
 X = tf.placeholder(tf.float32, shape=[None,bands,frames,num_channels])
